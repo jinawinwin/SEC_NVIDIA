@@ -404,7 +404,7 @@ def update_readme(peers, data, generated_at):
 def write_csv(rows, path, keys):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=keys, extrasaction="ignore")
+        w = csv.DictWriter(fh, fieldnames=keys, extrasaction="ignore", lineterminator="\n")
         w.writeheader()
         w.writerows(rows)
 
@@ -444,6 +444,14 @@ def main():
         "insights": insights(data),
     }
     DOCS_DATA.mkdir(parents=True, exist_ok=True)
+    # Keep the previous timestamp when nothing but the timestamp would change, so a run
+    # without new SEC data leaves the repo untouched (no empty monthly commits).
+    prev_path = DOCS_DATA / "dashboard.json"
+    if prev_path.exists():
+        prev = json.loads(prev_path.read_text(encoding="utf-8"))
+        candidate = json.loads(json.dumps(dashboard, default=str))
+        if {**prev, "generated_at": None} == {**candidate, "generated_at": None}:
+            dashboard["generated_at"] = prev["generated_at"]
     (DOCS_DATA / "dashboard.json").write_text(json.dumps(dashboard, indent=1, default=str), encoding="utf-8")
     update_readme(peers, data, dashboard["generated_at"])
     print(f"annual={len(data['annual'])} half={len(data['half'])} quarterly={len(data['quarterly'])} peers={len(peers)}")
