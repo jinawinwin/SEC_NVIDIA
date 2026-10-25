@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NVIDIA SEC Dashboard</title>
+<meta name="description" content="SEC EDGAR XBRL 데이터로 만든 NVIDIA 재무 분석 대시보드 (연간·반기·분기, 글로벌 피어 비교)">
+<link rel="icon" href="assets/nvidia_logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f5f2;
+  --surface: #ffffff;
+  --surface-2: #f8f9f6;
+  --border: #e3e5df;
+  --text: #111311;
+  --text-2: #4f534c;
+  --muted: #80857c;
+  --brand: #76b900;
+  --brand-ink: #4a7a00;
+  --grid: #eceee8;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  --neg: #e34948; --pos: #1baf7a;
+  --shadow: 0 1px 2px rgba(17,19,17,.04), 0 4px 16px rgba(17,19,17,.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #111210; --surface: #1a1b19; --surface-2: #20221f; --border: #2e302c;
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8f9089; --brand: #86cc0a; --brand-ink: #9fdc3a;
+    --grid: #262824; --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --neg: #e66767; --pos: #199e70; --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111210; --surface: #1a1b19; --surface-2: #20221f; --border: #2e302c;
+  --text: #f0efec; --text-2: #c3c2b7; --muted: #8f9089; --brand: #86cc0a; --brand-ink: #9fdc3a;
+  --grid: #262824; --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  --neg: #e66767; --pos: #199e70; --shadow: none;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 14px/1.5 Inter, "Noto Sans KR", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1320px; margin: 0 auto; padding: 24px 24px 80px; }
+a { color: var(--brand-ink); }
+
+/* header */
+.hero { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
+.logo { background: #fff; border-radius: 14px; border: 1px solid var(--border); width: 96px; height: 64px;
+  display: grid; place-items: center; overflow: hidden; flex: none; }
+.logo img { width: 120px; }
+.hero h1 { margin: 0; font-size: 26px; letter-spacing: -.02em; }
+.hero p { margin: 2px 0 0; color: var(--text-2); }
+.meta { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { font-size: 12px; padding: 5px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-2); white-space: nowrap; text-decoration: none; }
+.chip b { color: var(--text); font-weight: 600; }
+
+/* KPI tiles */
+.kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 16px; }
+.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); }
+.kpi .k { font-size: 12px; color: var(--muted); }
+.kpi .v { font-size: 24px; font-weight: 700; letter-spacing: -.02em; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.kpi .d { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+.up { color: var(--pos); font-weight: 600; } .down { color: var(--neg); font-weight: 600; }
+
+.insights { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--brand);
+  border-radius: 14px; padding: 14px 18px; margin-bottom: 16px; box-shadow: var(--shadow); }
+.insights h2 { font-size: 14px; margin: 0 0 6px; }
+.insights ul { margin: 0; padding-left: 18px; color: var(--text-2); }
+.insights li { margin: 2px 0; }
+
+/* charts */
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; box-shadow: var(--shadow);
+  break-inside: avoid; page-break-inside: avoid; }
+.card h3 { margin: 0; font-size: 15px; }
+.card .sub { margin: 2px 0 10px; font-size: 12px; color: var(--muted); }
+.chart { position: relative; height: 280px; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); margin: -4px 0 8px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+/* tables */
+.section-title { display: flex; align-items: baseline; gap: 12px; margin: 36px 0 12px; }
+.section-title h2 { margin: 0; font-size: 20px; letter-spacing: -.01em; }
+.section-title span { color: var(--muted); font-size: 12px; }
+.tcard { padding: 0; overflow: hidden; margin-bottom: 18px; }
+.thead { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.thead h3 { font-size: 16px; }
+.badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--brand) 16%, transparent); color: var(--brand-ink); }
+.seg { margin-left: auto; display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: var(--surface); color: var(--text-2); font: inherit; font-size: 12px; padding: 5px 10px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button.on { background: var(--text); color: var(--surface); }
+.scroll { overflow-x: auto; }
+table { border-collapse: separate; border-spacing: 0; width: 100%; font-variant-numeric: tabular-nums; font-size: 13px; }
+th, td { padding: 7px 12px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
+thead th { position: sticky; top: 0; background: var(--surface-2); color: var(--text-2); font-weight: 600; font-size: 12px; }
+thead th .dt { display: block; font-weight: 400; color: var(--muted); font-size: 11px; }
+th:first-child, td:first-child { position: sticky; left: 0; text-align: left; background: var(--surface); z-index: 1;
+  min-width: 190px; border-right: 1px solid var(--border); }
+thead th:first-child { background: var(--surface-2); z-index: 2; }
+tr.grp td { background: var(--surface-2); font-weight: 700; font-size: 12px; color: var(--brand-ink); letter-spacing: .02em; text-align: left; }
+tr.grp td:first-child { background: var(--surface-2); }
+tr.ratio td { color: var(--text-2); }
+tr.ratio td:first-child { padding-left: 24px; color: var(--muted); }
+tbody tr:not(.grp):hover td { background: color-mix(in srgb, var(--brand) 7%, var(--surface)); }
+td.na { color: var(--muted); }
+td.neg { color: var(--neg); }
+.peer td:nth-child(2), .peer td:nth-child(3), .peer td:nth-child(4), .peer th:nth-child(2), .peer th:nth-child(3), .peer th:nth-child(4) { text-align: left; }
+.peer td:nth-child(4) { white-space: normal; min-width: 260px; color: var(--text-2); }
+.peer tr.self td { background: color-mix(in srgb, var(--brand) 10%, var(--surface)); font-weight: 600; }
+.peer td .tk { display: block; font-size: 11px; color: var(--muted); font-weight: 400; }
+.note { font-size: 12px; color: var(--muted); padding: 10px 18px 14px; }
+footer { margin-top: 28px; font-size: 12px; color: var(--muted); }
+
+/* floating export panel */
+.fab { position: fixed; right: 18px; top: 50%; transform: translateY(-50%); z-index: 50; display: flex; flex-direction: column; gap: 8px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 10px 8px; box-shadow: 0 8px 30px rgba(0,0,0,.14); }
+.fab .lbl { font-size: 10px; text-align: center; color: var(--muted); font-weight: 600; letter-spacing: .06em; }
+.fbtn { width: 56px; height: 56px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+  cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font: 600 11px Inter, sans-serif; }
+.fbtn:hover { border-color: var(--brand); }
+.fbtn svg { width: 22px; height: 22px; }
+.fbtn.pdf svg { color: #d93a32; } .fbtn.xls svg { color: #1d7a45; }
+.pop { position: absolute; right: 78px; top: 50%; transform: translateY(-50%); width: 240px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 14px; box-shadow: 0 8px 30px rgba(0,0,0,.16); display: none; }
+.pop.open { display: block; }
+.pop h4 { margin: 0 0 8px; font-size: 13px; }
+.pop label { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+.pop label:hover { background: var(--surface-2); }
+.pop label small { margin-left: auto; color: var(--muted); }
+.pop input { accent-color: var(--brand); }
+.pop .go { width: 100%; margin-top: 10px; border: 0; border-radius: 9px; padding: 9px; background: var(--brand); color: #0b1400; font-weight: 700; cursor: pointer; }
+.pop .go:disabled { opacity: .45; cursor: not-allowed; }
+.toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--surface);
+  padding: 9px 16px; border-radius: 10px; font-size: 13px; display: none; z-index: 60; }
+
+body.exporting .fab, body.exporting .seg { display: none !important; }
+
+@media (min-width: 761px) and (max-width: 1500px) { .wrap { padding-right: 100px; } }
+@media (max-width: 1100px) { .kpis { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 760px) {
+  .wrap { padding: 16px 16px 120px; }
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .kpis { grid-template-columns: repeat(2, 1fr); }
+  .meta { margin-left: 0; }
+  .fab { top: auto; bottom: 14px; transform: none; flex-direction: row; right: 14px; }
+  .fab .lbl { display: none; }
+  .pop { right: 0; top: auto; bottom: 76px; transform: none; }
+  th:first-child, td:first-child { min-width: 150px; }
+}
+@media print { .fab { display: none; } }
+</style>
+</head>
+<body>
+<div class="wrap" id="dashboard">
+  <header class="hero">
+    <div class="logo"><img src="assets/nvidia_logo.png" alt="NVIDIA"></div>
+    <div>
+      <h1>NVIDIA 재무 분석 대시보드</h1>
+      <p>SEC EDGAR XBRL 공시 데이터 기반 · 연간 / 반기 / 분기 · 글로벌 피어 비교</p>
+    </div>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section class="kpis" id="kpis"></section>
+  <section class="insights"><h2>핵심 인사이트</h2><ul id="insights"></ul></section>
+
+  <section class="grid">
+    <div class="card"><h3>연간 매출 · 순이익</h3><p class="sub">회계연도 기준, 십억 달러 (USD B)</p>
+      <div class="legend"><span><i style="background:var(--s1)"></i>매출</span><span><i style="background:var(--s3)"></i>순이익</span></div>
+      <div class="chart"><canvas id="cAnnual"></canvas></div></div>
+    <div class="card"><h3>분기 매출 추이</h3><p class="sub">최근 16개 분기, 십억 달러 · 막대 위: 전년 동기 대비 성장률</p>
+      <div class="chart"><canvas id="cQuarter"></canvas></div></div>
+    <div class="card"><h3>수익성 추이</h3><p class="sub">분기 매출총이익률 · 영업이익률 · 순이익률 (%)</p>
+      <div class="legend"><span><i style="background:var(--s1)"></i>매출총이익률</span><span><i style="background:var(--s2)"></i>영업이익률</span><span><i style="background:var(--s3)"></i>순이익률</span></div>
+      <div class="chart"><canvas id="cMargin"></canvas></div></div>
+    <div class="card"><h3 id="wfTitle">손익 구조 (Waterfall)</h3><p class="sub">매출에서 순이익까지의 흐름, 십억 달러</p>
+      <div class="chart"><canvas id="cWaterfall"></canvas></div></div>
+    <div class="card"><h3>반기 매출 비교 (H1 vs H2)</h3><p class="sub">회계연도별 상·하반기 매출, 십억 달러</p>
+      <div class="legend"><span><i style="background:var(--s1)"></i>H1 (상반기)</span><span><i style="background:var(--s2)"></i>H2 (하반기)</span></div>
+      <div class="chart"><canvas id="cHalf"></canvas></div></div>
+    <div class="card"><h3>현금 창출력</h3><p class="sub">연간 영업현금흐름 · 잉여현금흐름 · 자사주 매입, 십억 달러</p>
+      <div class="legend"><span><i style="background:var(--s1)"></i>영업현금흐름</span><span><i style="background:var(--s3)"></i>잉여현금흐름</span><span><i style="background:var(--s2)"></i>자사주 매입</span></div>
+      <div class="chart"><canvas id="cCash"></canvas></div></div>
+    <div class="card"><h3>재무상태 구조</h3><p class="sub">분기말 부채 + 자본 = 총자산, 십억 달러</p>
+      <div class="legend"><span><i style="background:var(--s2)"></i>부채</span><span><i style="background:var(--s1)"></i>자본</span></div>
+      <div class="chart"><canvas id="cBalance"></canvas></div></div>
+    <div class="card"><h3>글로벌 피어 비교</h3><p class="sub">최근 회계연도 매출(USD B) — 막대 옆: 순이익률</p>
+      <div class="chart"><canvas id="cPeers"></canvas></div></div>
+  </section>
+
+  <div class="section-title"><h2>주요 재무 수치</h2><span id="unitNote">단위: 백만 달러(USD M) · EPS: 달러 · 주식수: 백만 주</span></div>
+  <div id="tables"></div>
+
+  <div class="section-title"><h2>Global Peer Firms</h2><span>최근 회계연도 · SEC XBRL (미국 외 상장사는 SEC 미제출 시 N/A)</span></div>
+  <div class="card tcard">
+    <div class="scroll"><table class="peer" id="peerTable"></table></div>
+    <div class="note">재무 수치는 각 사의 SEC 10-K / 20-F XBRL 최근 회계연도 기준(통화: USD, TSMC는 20-F의 USD 환산값). 회계연도 종료일이 서로 달라 단순 비교 시 유의하세요. 삼성전자·SK하이닉스·캄브리콘은 SEC 공시 대상이 아니어서 국내/현지 공시(DART·SSE)를 참고하세요.</div>
+  </div>
+
+  <footer id="footer"></footer>
+</div>
+
+<!-- floating export panel -->
+<aside class="fab" aria-label="내보내기">
+  <div class="lbl">EXPORT</div>
+  <button class="fbtn pdf" id="btnPdf" title="대시보드를 PDF로 저장">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>PDF</button>
+  <button class="fbtn xls" id="btnXls" title="데이터를 엑셀로 다운로드" aria-expanded="false">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>Excel</button>
+  <div class="pop" id="xlsPop">
+    <h4>엑셀 다운로드 — 기간 선택</h4>
+    <label><input type="checkbox" value="annual" checked> 연간 (Annual) <small id="nA"></small></label>
+    <label><input type="checkbox" value="half" checked> 반기 (Half-year) <small id="nH"></small></label>
+    <label><input type="checkbox" value="quarterly" checked> 분기 (Quarterly) <small id="nQ"></small></label>
+    <label><input type="checkbox" value="peers"> 피어 비교 (Peers)</label>
+    <button class="go" id="goXls">다운로드 (.xlsx)</button>
+  </div>
+</aside>
+<div class="toast" id="toast"></div>
+
+<script>
+const KO = {
+  revenue: "매출", revenue_yoy: "매출 성장률 (YoY)", revenue_qoq: "매출 성장률 (QoQ)", cost_of_revenue: "매출원가",
+  gross_profit: "매출총이익", gross_margin: "매출총이익률", rnd: "연구개발비 (R&D)", rnd_ratio: "R&D / 매출",
+  sga: "판매관리비 (SG&A)", opex: "영업비용 합계", operating_income: "영업이익", operating_margin: "영업이익률",
+  income_tax: "법인세", tax_rate: "유효세율", net_income: "순이익", net_income_yoy: "순이익 성장률 (YoY)",
+  net_margin: "순이익률", eps_diluted: "희석 EPS (분할 조정)", eps_yoy: "EPS 성장률 (YoY)", diluted_shares: "희석 주식수 (분할 조정)",
+  cfo: "영업활동현금흐름", capex: "설비투자 (CapEx)", fcf: "잉여현금흐름 (FCF)", fcf_margin: "FCF 마진",
+  buybacks: "자사주 매입", dividends: "배당금 지급", sbc: "주식보상비용",
+  cash: "현금성자산", marketable_securities: "단기 유가증권", receivables: "매출채권", inventory: "재고자산",
+  current_assets: "유동자산", total_assets: "자산총계", current_liabilities: "유동부채", total_liabilities: "부채총계",
+  long_term_debt: "차입금 (총)", equity: "자본총계", current_ratio: "유동비율", debt_to_equity: "부채비율 (차입금/자본)",
+  roe: "ROE (연환산)", roa: "ROA (연환산)"
+};
+const GROUP_KO = { "Income statement": "손익계산서", "Cash flow": "현금흐름표", "Balance sheet": "재무상태표" };
+const FREQ = {
+  annual: { ko: "연간", en: "Annual", defaultN: 0, opts: [5, 10, 0] },
+  half: { ko: "반기", en: "Half-year", defaultN: 10, opts: [6, 10, 0] },
+  quarterly: { ko: "분기", en: "Quarterly", defaultN: 12, opts: [8, 12, 0] },
+};
+let D;
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const B = v => v == null ? null : v / 1e9;
+
+function fmt(v, unit) {
+  if (v == null || !isFinite(v)) return "–";
+  switch (unit) {
+    case "usd": return (v / 1e6).toLocaleString("en-US", { maximumFractionDigits: 0 });
+    case "usd_ps": return v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    case "shares": return (v / 1e6).toLocaleString("en-US", { maximumFractionDigits: 0 });
+    case "pct": return (v * 100).toFixed(1) + "%";
+    case "x": return v.toFixed(2) + "x";
+    default: return String(v);
+  }
+}
+const money = v => v == null ? "–" : "$" + (v / 1e9).toLocaleString("en-US", { maximumFractionDigits: 1 }) + "B";
+const delta = (v, label) => v == null ? "" : `<span class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "▲" : "▼"} ${(Math.abs(v) * 100).toFixed(0)}%</span> ${label}`;
+
+function header() {
+  const lf = D.latest_filing;
+  document.getElementById("meta").innerHTML = `
+    <span class="chip">CIK <b>${D.company.cik}</b></span>
+    <span class="chip">최근 공시 <b>${lf ? lf.form + " · " + lf.filingDate : "-"}</b></span>
+    <span class="chip">업데이트 <b>${D.generated_at}</b></span>
+    ${lf ? `<a class="chip" href="${lf.url}" target="_blank" rel="noopener">SEC 원문 ↗</a>` : ""}
+    <a class="chip" href="https://github.com/jinawinwin/SEC_NVIDIA" target="_blank" rel="noopener">GitHub ↗</a>`;
+  const a = D.annual.at(-1), q = D.quarterly.at(-1);
+  const tiles = [
+    [`최근 분기 매출 · ${q.period}`, money(q.revenue), delta(q.revenue_yoy, "YoY")],
+    [`연간 매출 · FY${a.fiscal_year}`, money(a.revenue), delta(a.revenue_yoy, "YoY")],
+    [`연간 순이익 · FY${a.fiscal_year}`, money(a.net_income), delta(a.net_income_yoy, "YoY")],
+    [`매출총이익률 · ${q.period}`, fmt(q.gross_margin, "pct"), `영업이익률 ${fmt(q.operating_margin, "pct")}`],
+    [`잉여현금흐름 · FY${a.fiscal_year}`, money(a.fcf), `FCF 마진 ${fmt(a.fcf_margin, "pct")}`],
+    [`희석 EPS · FY${a.fiscal_year}`, "$" + fmt(a.eps_diluted, "usd_ps"), delta(a.eps_yoy, "YoY")],
+  ];
+  document.getElementById("kpis").innerHTML = tiles.map(([k, v, d]) =>
+    `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("");
+  document.getElementById("insights").innerHTML = D.insights.map(s => `<li>${s}</li>`).join("");
+  document.getElementById("footer").innerHTML = `데이터 출처: SEC EDGAR (data.sec.gov companyfacts / submissions) · 매월 1일·5일 GitHub Actions로 자동 업데이트 ·
+    분기·반기 값 중 직접 공시되지 않은 항목(4Q, 하반기 등)은 누적(YTD) 공시값의 차감으로 산출 · EPS/주식수는 2021년(4:1), 2024년(10:1) 액면분할 반영.`;
+  document.getElementById("nA").textContent = D.annual.length + "개";
+  document.getElementById("nH").textContent = D.half.length + "개";
+  document.getElementById("nQ").textContent = D.quarterly.length + "개";
+}
+
+/* ---------- charts ---------- */
+const charts = [];
+function baseOpts(extra = {}) {
+  const grid = css("--grid"), muted = css("--muted");
+  return Object.assign({
+    responsive: true, maintainAspectRatio: false, animation: false,
+    interaction: { mode: "index", intersect: false },
+    plugins: { legend: { display: false }, tooltip: { backgroundColor: css("--text"), titleColor: css("--surface"), bodyColor: css("--surface"),
+      padding: 10, cornerRadius: 8, boxPadding: 4 } },
+    scales: {
+      x: { grid: { display: false }, ticks: { color: muted, font: { size: 11 }, maxRotation: 0, autoSkip: true }, border: { color: grid } },
+      y: { grid: { color: grid }, ticks: { color: muted, font: { size: 11 } }, border: { display: false }, beginAtZero: true },
+    },
+  }, extra);
+}
+const bar = (label, data, color, more = {}) => Object.assign({ label, data, backgroundColor: color, borderRadius: 4, borderSkipped: "bottom",
+  maxBarThickness: 28, categoryPercentage: .72, barPercentage: .9 }, more);
+const line = (label, data, color) => ({ label, data, borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 0,
+  pointHoverRadius: 5, tension: .25, spanGaps: true });
+const usdTip = { callbacks: { label: c => ` ${c.dataset.label}: ${c.raw == null ? "–" : "$" + c.raw.toFixed(1) + "B"}` } };
+
+// Selective labels on the latest bar of each dataset / YoY on the quarterly bars.
+const barLabels = {
+  id: "barLabels",
+  afterDatasetsDraw(chart, _, opts) {
+    if (!opts || !opts.texts) return;
+    const { ctx } = chart; ctx.save();
+    ctx.font = "600 10px Inter, sans-serif"; ctx.fillStyle = css("--text-2"); ctx.textAlign = "center";
+    const meta = chart.getDatasetMeta(opts.dataset || 0);
+    meta.data.forEach((el, i) => { const t = opts.texts[i]; if (t) ctx.fillText(t, el.x, el.y - 6); });
+    ctx.restore();
+  }
+};
+
+function drawCharts() {
+  charts.forEach(c => c.destroy()); charts.length = 0;
+  const s1 = css("--s1"), s2 = css("--s2"), s3 = css("--s3"), brand = css("--brand"), neg = css("--neg"), muted = css("--muted");
+
+  const A = D.annual.filter(r => r.fiscal_year >= 2012);
+  charts.push(new Chart(cAnnual, { type: "bar", data: { labels: A.map(r => "FY" + String(r.fiscal_year).slice(2)),
+    datasets: [bar("매출", A.map(r => B(r.revenue)), s1), bar("순이익", A.map(r => B(r.net_income)), s3)] },
+    options: baseOpts({ plugins: { ...baseOpts().plugins, tooltip: { ...baseOpts().plugins.tooltip, ...usdTip } } }) }));
+
+  const Q = D.quarterly.slice(-16);
+  charts.push(new Chart(cQuarter, { type: "bar", plugins: [barLabels], data: { labels: Q.map(r => r.period.replace(" FY", "\n'").replace("'20", "'")),
+    datasets: [bar("매출", Q.map(r => B(r.revenue)), brand, { maxBarThickness: 30 })] },
+    options: baseOpts({ layout: { padding: { top: 16 } }, plugins: { ...baseOpts().plugins,
+      barLabels: { texts: Q.map(r => r.revenue_yoy == null ? "" : (r.revenue_yoy >= 0 ? "+" : "") + (r.revenue_yoy * 100).toFixed(0) + "%") },
+      tooltip: { ...baseOpts().plugins.tooltip, callbacks: { label: c => { const r = Q[c.dataIndex];
+        return [` 매출: $${c.raw.toFixed(1)}B`, ` YoY: ${fmt(r.revenue_yoy, "pct")} · QoQ: ${fmt(r.revenue_qoq, "pct")}`]; } } } },
+      scales: { ...baseOpts().scales, x: { ...baseOpts().scales.x, ticks: { ...baseOpts().scales.x.ticks, callback(v) { return Q[v].period.replace(" FY20", "'"); } } } } }) }));
+
+  const M = D.quarterly.slice(-24);
+  charts.push(new Chart(cMargin, { type: "line", data: { labels: M.map(r => r.period.replace(" FY20", "'")),
+    datasets: [line("매출총이익률", M.map(r => r.gross_margin * 100), s1), line("영업이익률", M.map(r => r.operating_margin * 100), s2),
+      line("순이익률", M.map(r => r.net_margin * 100), s3)] },
+    options: baseOpts({ plugins: { ...baseOpts().plugins, tooltip: { ...baseOpts().plugins.tooltip,
+      callbacks: { label: c => ` ${c.dataset.label}: ${c.raw == null ? "–" : c.raw.toFixed(1) + "%"}` } } },
+      scales: { ...baseOpts().scales, y: { ...baseOpts().scales.y, ticks: { ...baseOpts().scales.y.ticks, callback: v => v + "%" } } } }) }));
+
+  // Waterfall for the latest fiscal year
+  const a = D.annual.at(-1);
+  document.getElementById("wfTitle").textContent = `손익 구조 Waterfall · FY${a.fiscal_year}`;
+  const R = B(a.revenue), GP = B(a.gross_profit), RD = B(a.rnd), SG = B(a.sga), OI = B(a.operating_income), NI = B(a.net_income);
+  const steps = [
+    ["매출", [0, R], s1], ["매출원가", [GP, R], neg], ["매출총이익", [0, GP], s1],
+    ["R&D", [GP - RD, GP], neg], ["SG&A", [GP - RD - SG, GP - RD], neg],
+  ];
+  // Opex items beyond R&D and SG&A (e.g. one-off charges) close the gap to reported operating income.
+  if (Math.abs(GP - RD - SG - OI) > 0.05) steps.push(["기타 영업비용", [OI, GP - RD - SG].sort((x, y) => x - y), neg]);
+  steps.push(["영업이익", [0, OI], s1],
+    [NI >= OI ? "영업외·세금 (+)" : "영업외·세금 (−)", [Math.min(OI, NI), Math.max(OI, NI)], NI >= OI ? s3 : neg], ["순이익", [0, NI], s3]);
+  charts.push(new Chart(cWaterfall, { type: "bar", data: { labels: steps.map(s => s[0]),
+    datasets: [{ data: steps.map(s => s[1]), backgroundColor: steps.map(s => s[2]), borderRadius: 4, borderSkipped: false, maxBarThickness: 44 }] },
+    options: baseOpts({ interaction: { mode: "nearest", intersect: true },
+      scales: { ...baseOpts().scales, x: { ...baseOpts().scales.x, ticks: { ...baseOpts().scales.x.ticks, autoSkip: false, font: { size: 10 } } } }, plugins: { ...baseOpts().plugins, tooltip: { ...baseOpts().plugins.tooltip,
+      callbacks: { label: c => { const [lo, hi] = c.raw; const isTotal = lo === 0; return ` ${isTotal ? "" : (steps[c.dataIndex][2] === s3 ? "+" : "−")}$${(hi - lo).toFixed(1)}B${isTotal ? ` (매출 대비 ${((hi / R) * 100).toFixed(0)}%)` : ""}`; } } } } }) }));
+
+  const years = [...new Set(D.half.map(r => r.fiscal_year))].filter(y => y >= 2016);
+  const hv = (y, h) => { const r = D.half.find(x => x.fiscal_year === y && x.index === h); return r ? B(r.revenue) : null; };
+  charts.push(new Chart(cHalf, { type: "bar", data: { labels: years.map(y => "FY" + String(y).slice(2)),
+    datasets: [bar("H1", years.map(y => hv(y, 1)), s1), bar("H2", years.map(y => hv(y, 2)), s2)] },
+    options: baseOpts({ plugins: { ...baseOpts().plugins, tooltip: { ...baseOpts().plugins.tooltip, ...usdTip } } }) }));
+
+  const C = D.annual.filter(r => r.fiscal_year >= 2016);
+  charts.push(new Chart(cCash, { type: "bar", data: { labels: C.map(r => "FY" + String(r.fiscal_year).slice(2)),
+    datasets: [bar("영업현금흐름", C.map(r => B(r.cfo)), s1), bar("잉여현금흐름", C.map(r => B(r.fcf)), s3), bar("자사주 매입", C.map(r => B(r.buybacks)), s2)] },
+    options: baseOpts({ plugins: { ...baseOpts().plugins, tooltip: { ...baseOpts().plugins.tooltip, ...usdTip } } }) }));
+
+  const S = D.quarterly.filter(r => r.total_assets != null).slice(-16);
+  charts.push(new Chart(cBalance, { type: "bar", data: { labels: S.map(r => r.period.replace(" FY20", "'")),
+    datasets: [bar("부채", S.map(r => B(r.total_liabilities)), s2, { stack: "s", borderRadius: 0, borderColor: css("--surface"), borderWidth: { top: 2 } }),
+      bar("자본", S.map(r => B(r.equity)), s1, { stack: "s", borderRadius: { topLeft: 4, topRight: 4 } })] },
+    options: baseOpts({ plugins: { ...baseOpts().plugins, tooltip: { ...baseOpts().plugins.tooltip, callbacks: { label: usdTip.callbacks.label,
+      footer: items => "총자산: $" + B(S[items[0].dataIndex].total_assets).toFixed(1) + "B" } } },
+      scales: { x: { ...baseOpts().scales.x, stacked: true }, y: { ...baseOpts().scales.y, stacked: true } } }) }));
+
+  const P = D.peers.filter(p => p.revenue != null && p.currency === "USD").sort((x, y) => y.revenue - x.revenue);
+  charts.push(new Chart(cPeers, { type: "bar", plugins: [{ id: "nm", afterDatasetsDraw(ch) { const { ctx } = ch; ctx.save();
+      ctx.font = "600 10px Inter, sans-serif"; ctx.fillStyle = css("--text-2"); ctx.textBaseline = "middle";
+      ch.getDatasetMeta(0).data.forEach((el, i) => ctx.fillText("NM " + fmt(P[i].net_margin, "pct"), el.x + 6, el.y)); ctx.restore(); } }],
+    data: { labels: P.map(p => p.name.replace(" (TSMC)", "").replace("Advanced Micro Devices", "AMD").replace(" Technology", "").replace(" Holdings", "")),
+      datasets: [{ label: "매출", data: P.map(p => B(p.revenue)), backgroundColor: P.map(p => p.ticker === "NVDA" ? brand : muted),
+        borderRadius: 4, borderSkipped: "start", maxBarThickness: 18 }] },
+    options: baseOpts({ indexAxis: "y", layout: { padding: { right: 70 } }, interaction: { mode: "nearest", axis: "y", intersect: false },
+      plugins: { ...baseOpts().plugins, tooltip: { ...baseOpts().plugins.tooltip, callbacks: { label: c => { const p = P[c.dataIndex];
+        return [` 매출: $${c.raw.toFixed(1)}B (FY end ${p.fiscal_year_end})`, ` 순이익률: ${fmt(p.net_margin, "pct")} · 영업이익률: ${fmt(p.operating_margin, "pct")}`]; } } } },
+      scales: { x: { ...baseOpts().scales.y }, y: { ...baseOpts().scales.x, ticks: { color: css("--text-2"), font: { size: 11 }, autoSkip: false } } } }) }));
+}
+
+/* ---------- tables ---------- */
+const tableState = {};
+function renderTable(freq) {
+  const f = FREQ[freq], n = tableState[freq] ?? f.defaultN;
+  const rows = (n ? D[freq].slice(-n) : D[freq]).slice().reverse();
+  const head = `<thead><tr><th>항목</th>${rows.map(r => `<th>${r.period}<span class="dt">~${r.end}</span></th>`).join("")}</tr></thead>`;
+  let body = "";
+  for (const g of D.layout) {
+    const keys = g.keys.filter(k => !(freq !== "quarterly" && k === "revenue_qoq"));
+    body += `<tr class="grp"><td colspan="${rows.length + 1}">${GROUP_KO[g.group]}</td></tr>`;
+    for (const k of keys) {
+      const unit = D.metrics[k].unit, ratio = ["pct", "x"].includes(unit);
+      body += `<tr class="${ratio ? "ratio" : ""}"><td>${KO[k] || D.metrics[k].label}</td>${rows.map(r => {
+        const v = r[k]; return `<td class="${v == null ? "na" : v < 0 ? "neg" : ""}">${fmt(v, unit)}</td>`; }).join("")}</tr>`;
+    }
+  }
+  const segs = f.opts.map(o => `<button data-f="${freq}" data-n="${o}" class="${o === n ? "on" : ""}">${o ? "최근 " + o : "전체"}</button>`).join("");
+  return `<div class="card tcard" id="t-${freq}"><div class="thead"><h3>${f.ko} 데이터</h3><span class="badge">${f.en}</span>
+    <span class="sub" style="margin:0;color:var(--muted);font-size:12px">${D[freq][0].period} – ${D[freq].at(-1).period} · ${D[freq].length}개 기간</span>
+    <div class="seg">${segs}</div></div><div class="scroll"><table>${head}<tbody>${body}</tbody></table></div></div>`;
+}
+function tables() {
+  document.getElementById("tables").innerHTML = ["annual", "half", "quarterly"].map(renderTable).join("");
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest(".seg button"); if (!b) return;
+  tableState[b.dataset.f] = +b.dataset.n;
+  document.getElementById("t-" + b.dataset.f).outerHTML = renderTable(b.dataset.f);
+});
+
+function peerTable() {
+  const head = `<thead><tr><th>#</th><th>기업</th><th>국가 / 상장</th><th>NVIDIA와의 관계</th><th>FY 종료</th><th>매출 (USD M)</th>
+    <th>순이익 (USD M)</th><th>매출총이익률</th><th>영업이익률</th><th>순이익률</th><th>R&D/매출</th></tr></thead>`;
+  const body = D.peers.map((p, i) => `<tr class="${p.ticker === "NVDA" ? "self" : ""}"><td>${i + 1}</td>
+    <td>${p.name}<span class="tk">${p.ticker}</span></td><td>${p.country}<span class="tk">${p.listing}</span></td><td>${p.role}</td>
+    <td class="${p.fiscal_year_end ? "" : "na"}">${p.fiscal_year_end || (p.sec_filer ? "–" : "SEC 미제출")}</td>
+    ${["revenue", "net_income"].map(k => `<td class="${p[k] == null ? "na" : p[k] < 0 ? "neg" : ""}">${fmt(p[k], "usd")}</td>`).join("")}
+    ${["gross_margin", "operating_margin", "net_margin", "rnd_ratio"].map(k => `<td class="${p[k] == null ? "na" : p[k] < 0 ? "neg" : ""}">${fmt(p[k], "pct")}</td>`).join("")}
+  </tr>`).join("");
+  document.getElementById("peerTable").innerHTML = head + `<tbody>${body}</tbody>`;
+  // The first sticky column here is "#": keep it narrow.
+  document.querySelectorAll("#peerTable th:first-child, #peerTable td:first-child").forEach(c => c.style.minWidth = "36px");
+}
+
+/* ---------- export ---------- */
+const toast = msg => { const t = document.getElementById("toast"); t.textContent = msg; t.style.display = "block"; setTimeout(() => t.style.display = "none", 2600); };
+const pop = document.getElementById("xlsPop"), btnXls = document.getElementById("btnXls");
+btnXls.onclick = e => { e.stopPropagation(); const o = pop.classList.toggle("open"); btnXls.setAttribute("aria-expanded", o); };
+document.addEventListener("click", e => { if (!pop.contains(e.target) && e.target !== btnXls) pop.classList.remove("open"); });
+pop.addEventListener("change", () => { document.getElementById("goXls").disabled = !pop.querySelector("input:checked"); });
+
+const NUMFMT = { usd: "#,##0", usd_ps: "0.00", shares: "#,##0", pct: "0.0%", x: "0.00" };
+function sheetFor(freq) {
+  const rows = D[freq].slice().reverse();
+  const aoa = [["항목 (Metric)", "단위", ...rows.map(r => r.period)], ["기간 종료일", "", ...rows.map(r => r.end)]];
+  const fmts = [];
+  for (const g of D.layout) {
+    aoa.push([GROUP_KO[g.group] + " / " + g.group]); fmts.push(null);
+    for (const k of g.keys) {
+      if (freq !== "quarterly" && k === "revenue_qoq") continue;
+      const u = D.metrics[k].unit;
+      const unitLabel = { usd: "USD M", usd_ps: "USD", shares: "M shares", pct: "%", x: "x" }[u];
+      aoa.push([`${KO[k]} (${D.metrics[k].label})`, unitLabel, ...rows.map(r => r[k] == null ? null : (u === "usd" || u === "shares") ? r[k] / 1e6 : r[k])]);
+      fmts.push(u);
+    }
+  }
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  fmts.forEach((u, i) => { if (!u) return; for (let c = 2; c < rows.length + 2; c++) {
+    const cell = ws[XLSX.utils.encode_cell({ r: i + 2, c })]; if (cell && cell.t === "n") cell.z = NUMFMT[u]; } });
+  ws["!cols"] = [{ wch: 38 }, { wch: 9 }, ...rows.map(() => ({ wch: 12 }))];
+  ws["!freeze"] = { xSplit: 2, ySplit: 2 };
+  return ws;
+}
+function peersSheet() {
+  const cols = ["ticker", "name", "country", "listing", "role", "fiscal_year_end", "currency", "revenue", "gross_profit", "operating_income", "net_income", "rnd",
+    "total_assets", "gross_margin", "operating_margin", "net_margin", "rnd_ratio"];
+  const aoa = [cols, ...D.peers.map(p => cols.map(c => ["revenue", "gross_profit", "operating_income", "net_income", "rnd", "total_assets"].includes(c)
+    ? (p[c] == null ? null : p[c] / 1e6) : p[c]))];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = cols.map(c => ({ wch: c === "role" ? 60 : c === "name" ? 28 : 14 }));
+  return ws;
+}
+document.getElementById("goXls").onclick = () => {
+  const sel = [...pop.querySelectorAll("input:checked")].map(i => i.value);
+  if (!sel.length) return;
+  const wb = XLSX.utils.book_new();
+  const names = { annual: "Annual (연간)", half: "Half-year (반기)", quarterly: "Quarterly (분기)", peers: "Peers (피어)" };
+  sel.forEach(s => XLSX.utils.book_append_sheet(wb, s === "peers" ? peersSheet() : sheetFor(s), names[s]));
+  const info = XLSX.utils.aoa_to_sheet([["NVIDIA Corporation — SEC EDGAR XBRL"], ["CIK", D.company.cik], ["Generated", D.generated_at],
+    ["Units", "USD millions (EPS in USD, shares in millions)"], ["Source", "https://data.sec.gov/api/xbrl/companyfacts/CIK0001045810.json"]]);
+  XLSX.utils.book_append_sheet(wb, info, "Info");
+  const tag = sel.filter(s => s !== "peers").map(s => ({ annual: "A", half: "H", quarterly: "Q" }[s])).join("");
+  XLSX.writeFile(wb, `NVIDIA_SEC_${tag || "Peers"}_${D.generated_at.slice(0, 10)}.xlsx`);
+  pop.classList.remove("open"); toast("엑셀 파일을 다운로드했습니다.");
+};
+
+document.getElementById("btnPdf").onclick = async () => {
+  toast("PDF 생성 중… (몇 초 걸릴 수 있습니다)");
+  document.body.classList.add("exporting");
+  const el = document.getElementById("dashboard");
+  try {
+    await html2pdf().set({
+      margin: [6, 6, 6, 6], filename: `NVIDIA_SEC_Dashboard_${D.generated_at.slice(0, 10)}.pdf`,
+      image: { type: "jpeg", quality: 0.95 },
+      html2canvas: { scale: 1.6, useCORS: true, backgroundColor: css("--bg"), windowWidth: 1360 },
+      jsPDF: { unit: "mm", format: "a3", orientation: "portrait" },
+      pagebreak: { mode: ["css"], avoid: [".card", ".kpi", ".insights", "tr"] },
+    }).from(el).save();
+  } finally { document.body.classList.remove("exporting"); }
+};
+
+fetch("data/dashboard.json", { cache: "no-store" }).then(r => r.json()).then(d => {
+  D = d; header(); drawCharts(); tables(); peerTable();
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawCharts);
+}).catch(err => { document.getElementById("insights").innerHTML = `<li>데이터를 불러오지 못했습니다: ${err}</li>`; });
+</script>
+</body>
+</html>
